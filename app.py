@@ -1,9 +1,10 @@
+import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import time
 
-def scrape_reviews(url, max_pages=1):
+def scrape_reviews(url, max_pages=3):
     headers = {
         "User-Agent": "Mozilla/5.0"
     }
@@ -15,7 +16,7 @@ def scrape_reviews(url, max_pages=1):
         res = requests.get(paginated_url, headers=headers)
 
         if res.status_code != 200:
-            print(f"Failed to load page {page}: Status code {res.status_code}")
+            st.warning(f"Failed to load page {page}: Status code {res.status_code}")
             break
 
         soup = BeautifulSoup(res.text, "html.parser")
@@ -25,7 +26,6 @@ def scrape_reviews(url, max_pages=1):
         texts = soup.find_all("p", class_="sc-dTOuAs")
 
         if not users:
-            print(f"No reviews found on page {page}.")
             break
 
         for user, rating, review in zip(users, ratings, texts):
@@ -35,13 +35,26 @@ def scrape_reviews(url, max_pages=1):
                 "Review": review.get_text(strip=True)
             })
 
-        time.sleep(1)  # polite delay between page fetches
+        time.sleep(1)
 
     return pd.DataFrame(all_reviews)
 
-# Example usage
-if __name__ == "__main__":
-    url = "https://www.zomato.com/kolkata/burger-singh-big-punjabi-burgers-1-baguihati/reviews"
-    df = scrape_reviews(url, max_pages=3)  # You can change number of pages
-    print(df)
-    df.to_csv("zomato_reviews.csv", index=False)
+# Streamlit UI
+st.title("Zomato Review Scraper (Requests + BeautifulSoup)")
+
+url = st.text_input("Enter Zomato Restaurant URL (e.g., ending in /reviews):")
+
+if st.button("Scrape Reviews"):
+    if not url:
+        st.warning("Please enter a Zomato review URL.")
+    else:
+        with st.spinner("Scraping reviews..."):
+            df = scrape_reviews(url)
+        if not df.empty:
+            st.success(f"Found {len(df)} reviews.")
+            st.dataframe(df)
+
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button("Download CSV", data=csv, file_name="zomato_reviews.csv", mime="text/csv")
+        else:
+            st.warning("No reviews found or failed to scrape.")

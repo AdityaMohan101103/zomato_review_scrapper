@@ -1,54 +1,53 @@
+# app.py
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 
-API_KEY = "9b54025852cc28fab3f3e46abba1a2e4"  # You can also use st.secrets["SCRAPER_API_KEY"]
+def scrape_zomato_reviews(url):
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+    }
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code != 200:
+            return "Failed to load page", []
 
-def fetch_reviews(url):
-    api_url = f"http://api.scraperapi.com/?api_key={API_KEY}&url={url}&render=true"
-    response = requests.get(api_url)
+        soup = BeautifulSoup(response.text, 'html.parser')
 
-    if response.status_code != 200:
-        st.error("Failed to load the page from ScraperAPI.")
-        return []
+        users = soup.find_all("p", class_="sc-1hez2tp-0 sc-faswKr")
+        ratings = soup.find_all("div", class_="sc-1q7bklc-1")
+        reviews = soup.find_all("p", class_="sc-1hez2tp-0 sc-dTOuAs")
 
-    soup = BeautifulSoup(response.text, 'html.parser')
-    reviews = []
-
-    # Extract all review blocks
-    review_blocks = soup.find_all('div', class_='sc-inlrYM')
-
-    for block in review_blocks:
-        try:
-            user = block.find('p', class_='sc-faswKr')
-            review_text = block.find('p', class_='sc-dTOuAs')
-            rating = block.find('div', class_='sc-1q7bklc-1')
-
-            reviews.append({
-                'User': user.text.strip() if user else 'N/A',
-                'Rating': rating.text.strip() if rating else 'N/A',
-                'Review': review_text.text.strip() if review_text else 'No review text'
+        data = []
+        for user, rating, review in zip(users, ratings, reviews):
+            data.append({
+                "User": user.get_text(strip=True),
+                "Rating": rating.get_text(strip=True),
+                "Review": review.get_text(strip=True)
             })
-        except Exception as e:
-            continue
 
-    return reviews
+        return None, data
 
+    except Exception as e:
+        return str(e), []
 
-# Streamlit UI
-st.title("🍽️ Zomato Review Scraper (via ScraperAPI)")
-url = st.text_input("Enter full Zomato review page URL (must end in `/reviews`)")
+# Streamlit app UI
+st.title("Zomato Review Scraper (BeautifulSoup)")
+
+url = st.text_input("Enter Zomato Restaurant Reviews URL:")
 
 if st.button("Scrape Reviews"):
-    if url.strip():
-        results = fetch_reviews(url.strip())
-        if results:
-            df = pd.DataFrame(results)
+    if url:
+        error, reviews = scrape_zomato_reviews(url)
+        if error:
+            st.error(error)
+        elif not reviews:
+            st.warning("No reviews found or scraping failed.")
+        else:
+            df = pd.DataFrame(reviews)
             st.write(df)
             csv = df.to_csv(index=False)
             st.download_button("Download CSV", csv, "reviews.csv", "text/csv")
-        else:
-            st.warning("No reviews found or scraping failed.")
     else:
-        st.warning("Please enter a valid Zomato URL.")
+        st.warning("Please enter a valid Zomato review URL.")

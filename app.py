@@ -1,57 +1,66 @@
 import streamlit as st
-import requests
-import re
-import json
 import pandas as pd
+import time
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 
-def extract_reviews_from_zomato(url):
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
-    response = requests.get(url, headers=headers)
-    if response.status_code != 200:
-        st.error("Failed to load page. Check URL.")
-        return []
+def scrape_reviews_with_selenium(url):
+    options = Options()
+    options.add_argument('--headless')
+    options.add_argument('--disable-gpu')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
 
-    # Extract embedded JSON from script tag
-    match = re.search(r'window\.__PRELOADED_STATE__\s*=\s*({.*});', response.text)
-    if not match:
-        st.error("Could not find embedded data in the page.")
-        return []
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=options)
 
-    data = json.loads(match.group(1))
+    driver.get(url)
+    time.sleep(5)
 
-    try:
-        reviews_data = data["pages"]["restaurant"]["sections"]["REVIEWS"]["sectionData"]["data"]["userReviewList"]
-        reviews = []
-        for review in reviews_data:
-            user = review.get("userName", "Unknown")
-            text = review.get("reviewText", "No review")
-            rating = review.get("reviewRating", {}).get("rating", "No rating")
-            reviews.append({
-                "User": user,
-                "Review": text,
-                "Rating": rating
-            })
-        return reviews
-    except Exception as e:
-        st.error("Failed to parse reviews. Zomato page structure may have changed.")
-        return []
+    # Scroll to load more reviews
+    for _ in range(3):
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(2)
+
+    reviews = []
+    review_elements = driver.find_elements(By.CLASS_NAME, "sc-1hez2tp-0")
+
+    for element in review_elements:
+        try:
+            user = element.find_element(By.CLASS_NAME, "sc-faswKr").text
+        except:
+            user = "Unknown"
+        try:
+            text = element.find_element(By.CLASS_NAME, "sc-dTOuAs").text
+        except:
+            text = "No review"
+        try:
+            rating = element.find_element(By.CLASS_NAME, "sc-1q7bklc-1").text
+        except:
+            rating = "No rating"
+
+        reviews.append({"User": user, "Review": text, "Rating": rating})
+
+    driver.quit()
+    return reviews
 
 # Streamlit UI
-st.title("Zomato Review Scraper (Web-Friendly)")
+st.title("Zomato Review Scraper (Local with Selenium)")
 
 url = st.text_input("Enter Zomato Restaurant URL:")
 
 if st.button("Scrape Reviews"):
     if url:
-        reviews = extract_reviews_from_zomato(url)
-        if reviews:
-            df = pd.DataFrame(reviews)
+        results = scrape_reviews_with_selenium(url)
+        if results:
+            df = pd.DataFrame(results)
             st.write(df)
             csv = df.to_csv(index=False)
             st.download_button("Download CSV", csv, "zomato_reviews.csv", "text/csv")
         else:
-            st.warning("No reviews found.")
+            st.warning("No reviews found or scraping failed.")
     else:
         st.warning("Please enter a valid Zomato URL.")

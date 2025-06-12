@@ -1,56 +1,47 @@
 import streamlit as st
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-import pandas as pd
-import time
+import requests
+from bs4 import BeautifulSoup
+import re
 
-def scrape_reviews_with_selenium(url):
-    options = Options()
-    options.add_argument('--headless')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-
-    service = Service("chromedriver")  # Path to ChromeDriver
-    driver = webdriver.Chrome(service=service, options=options)
-    
-    driver.get(url)
-    time.sleep(5)  # Give time for reviews to load
-
-    usernames = [el.text for el in driver.find_elements(By.CLASS_NAME, "sc-faswKr")]
-    ratings = [el.text for el in driver.find_elements(By.CLASS_NAME, "sc-1q7bklc-1")]
-    reviews = [el.text for el in driver.find_elements(By.CLASS_NAME, "sc-dTOuAs")]
-
-    driver.quit()
-
-    if not usernames or not reviews:
-        return []
-
-    data = []
-    for i in range(min(len(usernames), len(reviews))):
-        data.append({
-            "User": usernames[i],
-            "Rating": ratings[i] if i < len(ratings) else "No Rating",
-            "Review": reviews[i]
-        })
-    return data
-
-# Streamlit App
-st.title("🍔 Zomato Review Scraper")
-
+st.title("🍔 Zomato Review Scraper (BeautifulSoup)")
 url = st.text_input("Enter Zomato Restaurant Reviews URL:")
 
-if st.button("Scrape Reviews"):
-    if url:
-        with st.spinner("Fetching reviews, please wait..."):
-            results = scrape_reviews_with_selenium(url)
-        if results:
-            df = pd.DataFrame(results)
-            st.write(df)
-            csv = df.to_csv(index=False)
-            st.download_button("Download CSV", csv, "zomato_reviews.csv", "text/csv")
-        else:
-            st.error("No reviews found or scraping failed.")
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+}
+
+def scrape_reviews_bs4(zomato_url):
+    try:
+        response = requests.get(zomato_url, headers=headers, timeout=30)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        st.error(f"Request failed: {e}")
+        return []
+
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    reviewers = soup.find_all("p", class_=re.compile(r"sc-1hez2tp-0.*sc-faswKr"))
+    ratings = soup.find_all("div", class_=re.compile(r"sc-1q7bklc-1.*"))
+    types = soup.find_all("div", class_=re.compile(r"sc-1q7bklc-9.*"))
+    comments = soup.find_all("p", class_=re.compile(r"sc-1hez2tp-0.*sc-dTOuAs"))
+
+    results = []
+    for i in range(min(len(reviewers), len(ratings), len(types), len(comments))):
+        results.append({
+            "Reviewer": reviewers[i].text.strip(),
+            "Rating": ratings[i].text.strip(),
+            "Type": types[i].text.strip(),
+            "Comment": comments[i].text.strip()
+        })
+    return results
+
+if url:
+    st.write("Fetching reviews, please wait...")
+    reviews = scrape_reviews_bs4(url)
+    if reviews:
+        for r in reviews:
+            st.markdown(f"**{r['Reviewer']}** ({r['Type']})")
+            st.markdown(f"⭐ {r['Rating']} — {r['Comment']}")
+            st.markdown("---")
     else:
-        st.warning("Please enter a valid Zomato URL.")
+        st.warning("No reviews found or scraping failed.")

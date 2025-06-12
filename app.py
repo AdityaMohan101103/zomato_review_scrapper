@@ -1,22 +1,27 @@
 import streamlit as st
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import pandas as pd
 import time
 
+
 def scrape_reviews_with_selenium(url):
     options = Options()
     options.add_argument('--headless')
+    options.add_argument('--disable-gpu')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
 
-    driver = webdriver.Chrome(options=options)
+    # Automatically install ChromeDriver
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=options)
     driver.get(url)
 
-    # Wait for reviews to load
     try:
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CLASS_NAME, "sc-1hez2tp-0"))
@@ -26,7 +31,6 @@ def scrape_reviews_with_selenium(url):
         driver.quit()
         return None
 
-    # Scroll to load more reviews if needed
     for _ in range(3):
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(2)

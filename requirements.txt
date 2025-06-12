@@ -1,4 +1,4 @@
-beautifulsoup4
-requests
-pandas
 streamlit
+selenium
+pandas
+webdriver-manager

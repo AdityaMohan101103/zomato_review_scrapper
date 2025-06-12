@@ -1,52 +1,56 @@
 import streamlit as st
-import requests
-from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+import pandas as pd
+import time
 
-SCRAPERAPI_KEY = "9b54025852cc28fab3f3e46abba1a2e4"
+def scrape_reviews_with_selenium(url):
+    options = Options()
+    options.add_argument('--headless')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
 
-def fetch_reviews(zomato_url):
-    api_url = f"https://api.scraperapi.com?api_key={SCRAPERAPI_KEY}&url={zomato_url}&render=false"
+    service = Service("chromedriver")  # Path to ChromeDriver
+    driver = webdriver.Chrome(service=service, options=options)
+    
+    driver.get(url)
+    time.sleep(5)  # Give time for reviews to load
 
-    try:
-        response = requests.get(api_url, timeout=60)
-        response.raise_for_status()
-    except requests.RequestException as e:
-        st.error(f"Failed to fetch the page using ScraperAPI.\n\n{e}")
+    usernames = [el.text for el in driver.find_elements(By.CLASS_NAME, "sc-faswKr")]
+    ratings = [el.text for el in driver.find_elements(By.CLASS_NAME, "sc-1q7bklc-1")]
+    reviews = [el.text for el in driver.find_elements(By.CLASS_NAME, "sc-dTOuAs")]
+
+    driver.quit()
+
+    if not usernames or not reviews:
         return []
 
-    soup = BeautifulSoup(response.text, "html.parser")
-
-    reviews = []
-
-    names = soup.find_all("p", class_="sc-1hez2tp-0 sc-faswKr jihbqh")
-    ratings = soup.find_all("div", class_="sc-1q7bklc-1 cILgox")
-    types = soup.find_all("div", class_="sc-1q7bklc-9 dYrjiw")
-    texts = soup.find_all("p", class_="sc-1hez2tp-0 sc-dTOuAs iuORyl")
-
-    for name, rating, order_type, text in zip(names, ratings, types, texts):
-        reviews.append({
-            "name": name.get_text(strip=True),
-            "rating": rating.get_text(strip=True),
-            "order_type": order_type.get_text(strip=True),
-            "review": text.get_text(strip=True)
+    data = []
+    for i in range(min(len(usernames), len(reviews))):
+        data.append({
+            "User": usernames[i],
+            "Rating": ratings[i] if i < len(ratings) else "No Rating",
+            "Review": reviews[i]
         })
+    return data
 
-    return reviews
+# Streamlit App
+st.title("🍔 Zomato Review Scraper")
 
-# Streamlit UI
-st.title("🍔 Zomato Review Scraper (BeautifulSoup + ScraperAPI)")
-zomato_url = st.text_input("Enter Zomato Restaurant Reviews URL:")
+url = st.text_input("Enter Zomato Restaurant Reviews URL:")
 
-if zomato_url:
-    with st.spinner("Fetching reviews, please wait..."):
-        reviews = fetch_reviews(zomato_url)
-
-    if reviews:
-        st.success(f"Found {len(reviews)} reviews!")
-        for review in reviews:
-            st.markdown(f"**👤 {review['name']}**")
-            st.markdown(f"⭐ Rating: {review['rating']} ({review['order_type']})")
-            st.markdown(f"📝 {review['review']}")
-            st.markdown("---")
+if st.button("Scrape Reviews"):
+    if url:
+        with st.spinner("Fetching reviews, please wait..."):
+            results = scrape_reviews_with_selenium(url)
+        if results:
+            df = pd.DataFrame(results)
+            st.write(df)
+            csv = df.to_csv(index=False)
+            st.download_button("Download CSV", csv, "zomato_reviews.csv", "text/csv")
+        else:
+            st.error("No reviews found or scraping failed.")
     else:
-        st.warning("No reviews found or scraping failed.")
+        st.warning("Please enter a valid Zomato URL.")

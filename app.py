@@ -1,65 +1,47 @@
-import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
-import re
-import json
+import time
 
-# Extract embedded review data from Zomato page
-def scrape_reviews(url):
+def scrape_reviews(url, max_pages=1):
     headers = {
         "User-Agent": "Mozilla/5.0"
     }
-    response = requests.get(url, headers=headers)
-    if response.status_code != 200:
-        st.error("Failed to retrieve the page. Please check the URL.")
-        return []
 
-    soup = BeautifulSoup(response.text, "html.parser")
-    script_tag = soup.find("script", text=re.compile("zomatoReduxData"))
+    all_reviews = []
 
-    if not script_tag:
-        st.warning("Could not find embedded data in the page.")
-        return []
+    for page in range(1, max_pages + 1):
+        paginated_url = f"{url}?page={page}&sort=dd&filter=reviews-dd"
+        res = requests.get(paginated_url, headers=headers)
 
-    try:
-        json_text = re.search(r"zomatoReduxData\s*=\s*({.*});", script_tag.string).group(1)
-        data = json.loads(json_text)
-    except Exception as e:
-        st.error("Failed to parse embedded JSON data.")
-        return []
+        if res.status_code != 200:
+            print(f"Failed to load page {page}: Status code {res.status_code}")
+            break
 
-    # Traverse JSON to get reviews
-    try:
-        restaurant_id = next(iter(data["pages"]["restaurant"]["sections"].values()))["resId"]
-        reviews = data["entities"]["REVIEWS"]
-    except:
-        st.warning("No reviews found in data.")
-        return []
+        soup = BeautifulSoup(res.text, "html.parser")
 
-    review_list = []
-    for review_id, review_data in reviews.items():
-        user = review_data.get("userName", "Unknown")
-        rating = review_data.get("rating", "No rating")
-        text = review_data.get("reviewText", "No review")
-        review_list.append({"User": user, "Rating": rating, "Review": text})
+        users = soup.find_all("p", class_="sc-faswKr")
+        ratings = soup.find_all("div", class_="sc-1q7bklc-1")
+        texts = soup.find_all("p", class_="sc-dTOuAs")
 
-    return review_list
+        if not users:
+            print(f"No reviews found on page {page}.")
+            break
 
-# Streamlit UI
-st.title("Zomato Review Scraper (Requests + BeautifulSoup)")
+        for user, rating, review in zip(users, ratings, texts):
+            all_reviews.append({
+                "User": user.get_text(strip=True),
+                "Rating": rating.get_text(strip=True),
+                "Review": review.get_text(strip=True)
+            })
 
-url = st.text_input("Enter Zomato Restaurant URL:")
+        time.sleep(1)  # polite delay between page fetches
 
-if st.button("Scrape Reviews"):
-    if url:
-        reviews = scrape_reviews(url)
-        if reviews:
-            df = pd.DataFrame(reviews)
-            st.write(df)
-            csv = df.to_csv(index=False)
-            st.download_button("Download CSV", csv, "zomato_reviews.csv", "text/csv")
-        else:
-            st.info("No reviews found or failed to scrape.")
-    else:
-        st.warning("Please enter a valid Zomato URL.")
+    return pd.DataFrame(all_reviews)
+
+# Example usage
+if __name__ == "__main__":
+    url = "https://www.zomato.com/kolkata/burger-singh-big-punjabi-burgers-1-baguihati/reviews"
+    df = scrape_reviews(url, max_pages=3)  # You can change number of pages
+    print(df)
+    df.to_csv("zomato_reviews.csv", index=False)

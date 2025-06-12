@@ -3,53 +3,52 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 
-SCRAPER_API_KEY = "YOUR_API_KEY"  # Replace with your ScraperAPI key
+API_KEY = "9b54025852cc28fab3f3e46abba1a2e4"  # You can also use st.secrets["SCRAPER_API_KEY"]
 
-def fetch_rendered_html(url):
-    api_url = f"http://api.scraperapi.com/?api_key={SCRAPER_API_KEY}&url={url}&render=true"
+def fetch_reviews(url):
+    api_url = f"http://api.scraperapi.com/?api_key={API_KEY}&url={url}&render=true"
     response = requests.get(api_url)
-    return response.text if response.status_code == 200 else None
 
-def scrape_reviews_bs(url):
-    html = fetch_rendered_html(url)
-    if not html:
-        st.error("Failed to fetch rendered HTML.")
+    if response.status_code != 200:
+        st.error("Failed to load the page from ScraperAPI.")
         return []
 
-    soup = BeautifulSoup(html, "html.parser")
+    soup = BeautifulSoup(response.text, 'html.parser')
     reviews = []
 
-    review_blocks = soup.find_all("div", class_="sc-inlrYM ikYBPh")
+    # Extract all review blocks
+    review_blocks = soup.find_all('div', class_='sc-inlrYM')
+
     for block in review_blocks:
-        name_tag = block.find("p", class_="sc-faswKr")
-        review_tag = block.find("p", class_="sc-dTOuAs")
-        rating_tag = block.find("div", class_="sc-1q7bklc-1")
+        try:
+            user = block.find('p', class_='sc-faswKr')
+            review_text = block.find('p', class_='sc-dTOuAs')
+            rating = block.find('div', class_='sc-1q7bklc-1')
 
-        name = name_tag.text if name_tag else "Unknown"
-        review = review_tag.text if review_tag else "No Review"
-        rating = rating_tag.text if rating_tag else "No Rating"
-
-        reviews.append({
-            "User": name,
-            "Review": review,
-            "Rating": rating
-        })
+            reviews.append({
+                'User': user.text.strip() if user else 'N/A',
+                'Rating': rating.text.strip() if rating else 'N/A',
+                'Review': review_text.text.strip() if review_text else 'No review text'
+            })
+        except Exception as e:
+            continue
 
     return reviews
 
-# Streamlit UI
-st.title("Zomato Review Scraper (BeautifulSoup + ScraperAPI)")
 
-url = st.text_input("Enter Zomato Review Page URL")
+# Streamlit UI
+st.title("🍽️ Zomato Review Scraper (via ScraperAPI)")
+url = st.text_input("Enter full Zomato review page URL (must end in `/reviews`)")
 
 if st.button("Scrape Reviews"):
-    if url:
-        results = scrape_reviews_bs(url)
+    if url.strip():
+        results = fetch_reviews(url.strip())
         if results:
             df = pd.DataFrame(results)
             st.write(df)
-            st.download_button("Download CSV", df.to_csv(index=False), "zomato_reviews.csv", "text/csv")
+            csv = df.to_csv(index=False)
+            st.download_button("Download CSV", csv, "reviews.csv", "text/csv")
         else:
-            st.warning("No reviews found or failed to scrape.")
+            st.warning("No reviews found or scraping failed.")
     else:
         st.warning("Please enter a valid Zomato URL.")

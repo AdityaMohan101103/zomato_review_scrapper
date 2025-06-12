@@ -13,11 +13,11 @@ def scrape_reviews(url):
     soup = BeautifulSoup(response.text, 'html.parser')
     reviews = []
 
-    # Find the review section
-    review_section = soup.find_all('div', class_='sc-1hez2tp-0')
+    # Update the selectors based on the current HTML structure
+    review_section = soup.find_all('div', class_='sc-1hez2tp-0')  # Adjust this class as needed
     for review in review_section:
-        user_name = review.find('p', class_='sc-faswKr').text
-        review_text = review.find('p', class_='sc-dTOuAs').text
+        user_name = review.find('p', class_='sc-faswKr').text if review.find('p', class_='sc-faswKr') else 'Unknown User'
+        review_text = review.find('p', class_='sc-dTOuAs').text if review.find('p', class_='sc-dTOuAs') else 'No Review'
         rating = review.find('div', class_='sc-1q7bklc-1').text if review.find('div', class_='sc-1q7bklc-1') else 'No Rating'
         reviews.append({'User ': user_name, 'Review': review_text, 'Rating': rating})
 
